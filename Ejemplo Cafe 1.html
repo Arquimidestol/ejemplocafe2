@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Gestión de Tickets - Exportadora de Café</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    body {
+      background-color: #f4f1ed;
+      color: #3e3e3e;
+    }
+    .navbar {
+      background-color: #4e342e;
+    }
+    .navbar-brand, .nav-link, h1, h2, h3 {
+      color: #fff !important;
+    }
+    .card {
+      background-color: #fff8f0;
+    }
+    .btn-primary {
+      background-color: #6d4c41;
+      border: none;
+    }
+    .btn-success {
+      background-color: #388e3c;
+    }
+  </style>
+</head>
+
+<body>
+  <nav class="navbar navbar-expand-lg">
+    <div class="container-fluid">
+      <a class="navbar-brand" href="#">Exportadora de Café</a>
+    </div>
+  </nav>
+
+  <div class="container py-4">
+    <!-- Login / Registro -->
+    <div id="authSection">
+      <h2>Acceso de Usuario</h2>
+      <input id="email" class="form-control my-2" type="email" placeholder="Correo electrónico">
+      <input id="password" class="form-control my-2" type="password" placeholder="Contraseña">
+      <button class="btn btn-primary" onclick="login()">Iniciar Sesión</button>
+      <button class="btn btn-secondary" onclick="register()">Registrarse</button>
+      <button class="btn btn-warning" onclick="recoverPassword()">¿Olvidaste tu contraseña?</button>
+    </div>
+
+    <!-- Formulario Ticket -->
+    <div id="ticketForm" style="display:none">
+      <h2>Nuevo Ticket</h2>
+      <input id="titulo" class="form-control my-1" placeholder="Título">
+      <textarea id="descripcion" class="form-control my-1" placeholder="Descripción"></textarea>
+      <select id="prioridad" class="form-select my-1">
+        <option value="Alta">Alta</option>
+        <option value="Media">Media</option>
+        <option value="Baja">Baja</option>
+      </select>
+      <input id="cliente" class="form-control my-1" placeholder="Nombre del Cliente">
+      <input id="producto" class="form-control my-1" placeholder="Tipo de Producto">
+      <input id="pais" class="form-control my-1" placeholder="País de envío">
+      <input id="kilogramos" type="number" class="form-control my-1" placeholder="Kilogramos">
+      <button class="btn btn-success my-2" onclick="crearTicket()">Crear Ticket</button>
+    </div>
+
+    <!-- Lista de Tickets -->
+    <div id="ticketList" class="row mt-4"></div>
+    <button class="btn btn-primary mt-3" onclick="exportarExcel()">Exportar a Excel</button>
+
+    <!-- Gráfica -->
+    <h3 class="mt-5">Estadísticas por Prioridad</h3>
+    <canvas id="graficoPrioridad"></canvas>
+  </div>
+
+  <!-- Firebase SDK -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+    import { getFirestore, collection, addDoc, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+    import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, sendPasswordResetEmail } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyAb3bKIZVltsgs63TqDr2-DeB6eU1_bN3U",
+      authDomain: "exportadoracafeejemploarqui.firebaseapp.com",
+      projectId: "exportadoracafeejemploarqui",
+      storageBucket: "exportadoracafeejemploarqui.firebasestorage.app",
+      messagingSenderId: "589905472012",
+      appId: "1:589905472012:web:18b37f959e6173093e9c29"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+    const auth = getAuth();
+
+    window.register = async () => {
+      const email = document.getElementById('email').value;
+      const password = document.getElementById('password').value;
+      await createUserWithEmailAndPassword(auth, email, password);
+      alert('Registro exitoso');
+    };
+
+    window.login = async () => {
+      const email = document.getElementById('email').value;
+      const password = document.getElementById('password').value;
+      await signInWithEmailAndPassword(auth, email, password);
+      document.getElementById('authSection').style.display = 'none';
+      document.getElementById('ticketForm').style.display = 'block';
+      cargarTickets();
+    };
+
+    window.recoverPassword = async () => {
+      const email = document.getElementById('email').value;
+      await sendPasswordResetEmail(auth, email);
+      alert('Correo de recuperación enviado');
+    };
+
+    window.crearTicket = async () => {
+      const folio = 'FOLIO-' + Date.now();
+      const data = {
+        folio,
+        titulo: document.getElementById('titulo').value,
+        descripcion: document.getElementById('descripcion').value,
+        prioridad: document.getElementById('prioridad').value,
+        cliente: document.getElementById('cliente').value,
+        producto: document.getElementById('producto').value,
+        pais: document.getElementById('pais').value,
+        kilogramos: parseFloat(document.getElementById('kilogramos').value),
+        estado: 'Abierto',
+        fecha: new Date().toISOString()
+      };
+      await addDoc(collection(db, 'tickets'), data);
+      alert('Ticket creado con folio: ' + folio);
+      cargarTickets();
+    };
+
+    window.cargarTickets = async () => {
+      const res = await getDocs(collection(db, 'tickets'));
+      const lista = document.getElementById('ticketList');
+      lista.innerHTML = '';
+      const conteo = { Alta: 0, Media: 0, Baja: 0 };
+      res.forEach(doc => {
+        const d = doc.data();
+        conteo[d.prioridad]++;
+        lista.innerHTML += `
+          <div class="col-md-4">
+            <div class="card mb-3">
+              <div class="card-body">
+                <h5>${d.titulo}</h5>
+                <p>${d.descripcion}</p>
+                <p><strong>Cliente:</strong> ${d.cliente}</p>
+                <p><strong>Producto:</strong> ${d.producto} (${d.kilogramos} kg)</p>
+                <p><strong>País:</strong> ${d.pais}</p>
+                <p><strong>Folio:</strong> ${d.folio}</p>
+                <button class="btn btn-sm btn-outline-danger" onclick="exportPDF('${d.folio}', '${d.titulo}', '${d.descripcion}', '${d.cliente}', '${d.producto}', '${d.kilogramos}', '${d.pais}')">Exportar PDF</button>
+              </div>
+            </div>
+          </div>
+        `;
+      });
+      renderChart(conteo);
+    };
+
+    window.renderChart = (data) => {
+      new Chart(document.getElementById('graficoPrioridad'), {
+        type: 'bar',
+        data: {
+          labels: ['Alta', 'Media', 'Baja'],
+          datasets: [{
+            label: 'Tickets por prioridad',
+            data: [data.Alta, data.Media, data.Baja],
+            backgroundColor: ['#d32f2f', '#fbc02d', '#388e3c']
+          }]
+        }
+      });
+    };
+
+    window.exportPDF = (folio, titulo, descripcion, cliente, producto, kg, pais) => {
+      const win = window.open('', '_blank');
+      win.document.write(`<h1>Ticket ${folio}</h1>
+        <p>${titulo}</p>
+        <p>${descripcion}</p>
+        <p>Cliente: ${cliente}</p>
+        <p>Producto: ${producto}, ${kg} kg</p>
+        <p>País: ${pais}</p>`);
+      win.print();
+    };
+
+    window.exportarExcel = async () => {
+      const res = await getDocs(collection(db, 'tickets'));
+      let csv = 'Folio,Título,Descripción,Cliente,Producto,Kilogramos,País,Prioridad,Estado\n';
+      res.forEach(doc => {
+        const d = doc.data();
+        csv += `${d.folio},${d.titulo},${d.descripcion},${d.cliente},${d.producto},${d.kilogramos},${d.pais},${d.prioridad},${d.estado}\n`;
+      });
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = 'tickets.csv';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    };
+  </script>
+</body>
+
+</html>
